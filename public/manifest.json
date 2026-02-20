@@ -1,0 +1,17 @@
+{
+  "name": "DPDP Comply - Compliance Training Platform",
+  "short_name": "DPDP Comply",
+  "description": "India's DPDP Act 2023 Awareness & Training Simulation Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a2332",
+  "theme_color": "#0d9488",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}
