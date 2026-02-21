@@ -1,8 +1,11 @@
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookOpen, Award, ClipboardCheck, GitBranch, TrendingUp, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { BookOpen, Award, ClipboardCheck, GitBranch, AlertTriangle, PlayCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
 
 export default function Dashboard() {
   const { user, roles, hasRole } = useAuth();
@@ -41,6 +44,49 @@ export default function Dashboard() {
     },
   });
 
+  // Module progress for the user
+  const { data: progressList } = useQuery({
+    queryKey: ["module-progress-all", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("module_progress")
+        .select("*, training_modules(title, is_mandatory)")
+        .eq("user_id", user!.id);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  // All mandatory modules to find overdue/incomplete
+  const { data: mandatoryModules } = useQuery({
+    queryKey: ["mandatory-modules"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("training_modules")
+        .select("id, title")
+        .eq("is_mandatory", true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Expiring certificates
+  const { data: expiringCerts } = useQuery({
+    queryKey: ["expiring-certs", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("certificates")
+        .select("*, training_modules(title)")
+        .eq("user_id", user!.id)
+        .order("valid_until", { ascending: true })
+        .limit(5);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   const roleBadge = roles.length > 0 ? roles[0].replace("_", " ") : "employee";
 
   const stats = [
@@ -49,6 +95,18 @@ export default function Dashboard() {
     { title: "Assessments Taken", value: attemptCount ?? 0, icon: ClipboardCheck, color: "text-info" },
     { title: "Scenarios Available", value: scenarioCount ?? 0, icon: GitBranch, color: "text-warning" },
   ];
+
+  // Find incomplete mandatory modules
+  const completedIds = new Set(progressList?.filter((p) => p.status === "completed").map((p) => p.module_id) || []);
+  const overdueModules = mandatoryModules?.filter((m) => !completedIds.has(m.id)) || [];
+
+  // In-progress modules
+  const inProgressModules = progressList?.filter((p) => p.status === "in_progress") || [];
+
+  // Overall completion percentage
+  const totalMandatory = mandatoryModules?.length || 0;
+  const completedMandatory = mandatoryModules?.filter((m) => completedIds.has(m.id)).length || 0;
+  const overallPct = totalMandatory > 0 ? Math.round((completedMandatory / totalMandatory) * 100) : 0;
 
   return (
     <div className="space-y-8">
@@ -61,6 +119,11 @@ export default function Dashboard() {
         <p className="text-primary-foreground/60 text-sm mt-1">
           DPDP Act 2023 Compliance Training Platform
         </p>
+        <div className="mt-4 flex items-center gap-3">
+          <Progress value={overallPct} className="flex-1 h-3 bg-primary-foreground/20" />
+          <span className="text-sm font-semibold text-primary-foreground">{overallPct}% Complete</span>
+        </div>
+        <p className="text-xs text-primary-foreground/50 mt-1">{completedMandatory}/{totalMandatory} mandatory modules completed</p>
       </div>
 
       {/* Stats */}
@@ -77,6 +140,100 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Alerts & In-Progress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Overdue Mandatory */}
+        <div>
+          <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-warning" /> Pending Mandatory Training
+          </h2>
+          {overdueModules.length > 0 ? (
+            <div className="space-y-2">
+              {overdueModules.map((m) => (
+                <a key={m.id} href="/modules">
+                  <Card className="border-warning/30 bg-warning/5 hover:bg-warning/10 transition-colors cursor-pointer">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <BookOpen className="h-4 w-4 text-warning shrink-0" />
+                      <span className="text-sm font-medium">{m.title}</span>
+                      <Badge variant="outline" className="ml-auto text-xs text-warning border-warning/50">Incomplete</Badge>
+                    </CardContent>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <Card className="border-success/30 bg-success/5">
+              <CardContent className="p-4 text-sm text-success flex items-center gap-2">
+                <Award className="h-4 w-4" /> All mandatory training completed!
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Continue In-Progress */}
+        <div>
+          <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+            <PlayCircle className="h-5 w-5 text-info" /> Continue Training
+          </h2>
+          {inProgressModules.length > 0 ? (
+            <div className="space-y-2">
+              {inProgressModules.map((p) => (
+                <a key={p.id} href="/modules">
+                  <Card className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">{(p.training_modules as any)?.title}</span>
+                        <span className="text-xs text-muted-foreground">{p.progress_percent}%</span>
+                      </div>
+                      <Progress value={p.progress_percent} className="h-1.5" />
+                    </CardContent>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <Card className="border-border/50">
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                No modules in progress. Start a module to track your progress.
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Certification Status */}
+      {expiringCerts && expiringCerts.length > 0 && (
+        <div>
+          <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+            <Award className="h-5 w-5 text-accent" /> Certification Status
+          </h2>
+          <div className="space-y-2">
+            {expiringCerts.map((cert) => {
+              const isValid = new Date(cert.valid_until) > new Date();
+              const daysLeft = Math.ceil((new Date(cert.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              return (
+                <Card key={cert.id} className="border-border/50">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Award className={`h-4 w-4 shrink-0 ${isValid ? "text-success" : "text-destructive"}`} />
+                    <span className="text-sm font-medium flex-1">{(cert.training_modules as any)?.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Expires: {format(new Date(cert.valid_until), "MMM d, yyyy")}
+                    </span>
+                    <Badge className={`text-xs ${
+                      !isValid ? "bg-destructive text-destructive-foreground" :
+                      daysLeft < 30 ? "bg-warning text-warning-foreground" :
+                      "bg-success text-success-foreground"
+                    }`}>
+                      {!isValid ? "Expired" : daysLeft < 30 ? `${daysLeft}d left` : "Valid"}
+                    </Badge>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div>
