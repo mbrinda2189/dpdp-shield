@@ -103,7 +103,7 @@ function AdminOrgStats() {
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard(): JSX.Element {
   const { user, roles, hasRole } = useAuth();
   const isAdminOrCO = hasRole("admin") || hasRole("compliance_officer");
 
