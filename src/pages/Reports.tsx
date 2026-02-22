@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 const COLORS = [
   "hsl(174, 60%, 40%)",
@@ -63,8 +62,40 @@ export default function Reports() {
     },
   });
 
-  const totalAttempts = attempts?.length || 0;
-  const passed = attempts?.filter((a) => a.passed).length || 0;
+  // Build filtered user set
+  const filteredUserIds = useMemo(() => {
+    if (!profiles) return new Set<string>();
+    let users = profiles;
+    if (deptFilter !== "all") {
+      users = users.filter((p) => p.department === deptFilter);
+    }
+    let userIds = new Set(users.map((p) => p.user_id));
+    if (roleFilter !== "all" && userRoles) {
+      const roleUserIds = new Set(userRoles.filter((r) => r.role === roleFilter).map((r) => r.user_id));
+      userIds = new Set([...userIds].filter((id) => roleUserIds.has(id)));
+    }
+    return userIds;
+  }, [profiles, userRoles, roleFilter, deptFilter]);
+
+  const isFiltering = roleFilter !== "all" || deptFilter !== "all";
+
+  const filteredAttempts = useMemo(() => {
+    if (!attempts) return [];
+    return isFiltering ? attempts.filter((a) => filteredUserIds.has(a.user_id)) : attempts;
+  }, [attempts, filteredUserIds, isFiltering]);
+
+  const filteredCerts = useMemo(() => {
+    if (!certs) return [];
+    return isFiltering ? certs.filter((c) => filteredUserIds.has(c.user_id)) : certs;
+  }, [certs, filteredUserIds, isFiltering]);
+
+  const filteredProgress = useMemo(() => {
+    if (!progressData) return [];
+    return isFiltering ? progressData.filter((p) => filteredUserIds.has(p.user_id)) : progressData;
+  }, [progressData, filteredUserIds, isFiltering]);
+
+  const totalAttempts = filteredAttempts.length;
+  const passed = filteredAttempts.filter((a) => a.passed).length;
   const failed = totalAttempts - passed;
 
   const pieData = [
@@ -72,17 +103,18 @@ export default function Reports() {
     { name: "Failed", value: failed },
   ];
 
-  // Certs by module
   const certsByModule: Record<string, number> = {};
-  certs?.forEach((c) => {
+  filteredCerts.forEach((c) => {
     const title = (c.training_modules as any)?.title || "Unknown";
     certsByModule[title] = (certsByModule[title] || 0) + 1;
   });
-  const barData = Object.entries(certsByModule).map(([name, count]) => ({ name: name.length > 20 ? name.substring(0, 20) + "…" : name, certifications: count }));
+  const barData = Object.entries(certsByModule).map(([name, count]) => ({
+    name: name.length > 20 ? name.substring(0, 20) + "…" : name,
+    certifications: count,
+  }));
 
-  // Average score by module
   const scoresByModule: Record<string, { total: number; count: number }> = {};
-  attempts?.forEach((a) => {
+  filteredAttempts.forEach((a) => {
     const modTitle = ((a.assessments as any)?.training_modules as any)?.title || "Unknown";
     if (!scoresByModule[modTitle]) scoresByModule[modTitle] = { total: 0, count: 0 };
     const pct = a.total_questions > 0 ? Math.round((a.score / a.total_questions) * 100) : 0;
@@ -94,9 +126,8 @@ export default function Reports() {
     avgScore: Math.round(v.total / v.count),
   }));
 
-  // Completion rates
-  const completedCount = progressData?.filter((p) => p.status === "completed").length || 0;
-  const inProgressCount = progressData?.filter((p) => p.status === "in_progress").length || 0;
+  const completedCount = filteredProgress.filter((p) => p.status === "completed").length;
+  const inProgressCount = filteredProgress.filter((p) => p.status === "in_progress").length;
   const completionPie = [
     { name: "Completed", value: completedCount },
     { name: "In Progress", value: inProgressCount },
@@ -107,7 +138,10 @@ export default function Reports() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Compliance Reports</h1>
-          <p className="text-muted-foreground">Organization-wide compliance metrics</p>
+          <p className="text-muted-foreground">
+            Organization-wide compliance metrics
+            {isFiltering && <span className="text-accent ml-1">• Filtered ({filteredUserIds.size} users)</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -148,7 +182,7 @@ export default function Reports() {
         </Card>
         <Card className="border-border/50">
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Certifications</CardTitle></CardHeader>
-          <CardContent><span className="text-3xl font-display font-bold text-accent">{certs?.length || 0}</span></CardContent>
+          <CardContent><span className="text-3xl font-display font-bold text-accent">{filteredCerts.length}</span></CardContent>
         </Card>
         <Card className="border-border/50">
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Modules Completed</CardTitle></CardHeader>
