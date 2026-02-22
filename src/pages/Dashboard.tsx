@@ -2,13 +2,110 @@ import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BookOpen, Award, ClipboardCheck, GitBranch, AlertTriangle, PlayCircle } from "lucide-react";
+import { BookOpen, Award, ClipboardCheck, GitBranch, AlertTriangle, PlayCircle, Users, ShieldCheck, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 
+function AdminOrgStats() {
+  const { data: totalUsers } = useQuery({
+    queryKey: ["org-user-count"],
+    queryFn: async () => {
+      const { count } = await supabase.from("profiles").select("*", { count: "exact", head: true });
+      return count || 0;
+    },
+  });
+
+  const { data: allProgress } = useQuery({
+    queryKey: ["org-all-progress"],
+    queryFn: async () => {
+      const { data } = await supabase.from("module_progress").select("status, user_id, training_modules(title, is_mandatory)");
+      return data || [];
+    },
+  });
+
+  const { data: allAttempts } = useQuery({
+    queryKey: ["org-all-attempts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("attempts").select("passed, user_id");
+      return data || [];
+    },
+  });
+
+  const { data: allRoles } = useQuery({
+    queryKey: ["org-all-roles"],
+    queryFn: async () => {
+      const { data } = await supabase.from("user_roles").select("user_id, role");
+      return data || [];
+    },
+  });
+
+  const completedCount = allProgress?.filter((p) => p.status === "completed").length || 0;
+  const totalEntries = allProgress?.length || 1;
+  const orgCompletionRate = Math.round((completedCount / Math.max(totalEntries, 1)) * 100);
+
+  const totalAttempts = allAttempts?.length || 0;
+  const passedAttempts = allAttempts?.filter((a) => a.passed).length || 0;
+  const orgPassRate = totalAttempts > 0 ? Math.round((passedAttempts / totalAttempts) * 100) : 0;
+
+  const roleBreakdown = {
+    admin: allRoles?.filter((r) => r.role === "admin").length || 0,
+    compliance_officer: allRoles?.filter((r) => r.role === "compliance_officer").length || 0,
+    employee: allRoles?.filter((r) => r.role === "employee").length || 0,
+  };
+
+  // Users with incomplete mandatory modules
+  const uniqueUsersWithProgress = new Set(allProgress?.map((p) => p.user_id));
+  const usersCompleted = new Set(
+    allProgress?.filter((p) => p.status === "completed" && (p.training_modules as any)?.is_mandatory).map((p) => p.user_id)
+  );
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-display font-semibold flex items-center gap-2">
+        <ShieldCheck className="h-5 w-5 text-accent" /> Organization Overview
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-border/50">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Users</CardTitle></CardHeader>
+          <CardContent>
+            <span className="text-3xl font-display font-bold">{totalUsers ?? 0}</span>
+            <div className="flex gap-2 mt-2">
+              <Badge variant="outline" className="text-xs">{roleBreakdown.admin} Admin</Badge>
+              <Badge variant="outline" className="text-xs">{roleBreakdown.compliance_officer} CO</Badge>
+              <Badge variant="outline" className="text-xs">{roleBreakdown.employee} Emp</Badge>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Org Completion Rate</CardTitle></CardHeader>
+          <CardContent>
+            <span className="text-3xl font-display font-bold text-accent">{orgCompletionRate}%</span>
+            <Progress value={orgCompletionRate} className="mt-2 h-1.5" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/50">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Org Pass Rate</CardTitle></CardHeader>
+          <CardContent>
+            <span className="text-3xl font-display font-bold text-success">{orgPassRate}%</span>
+            <p className="text-xs text-muted-foreground mt-1">{passedAttempts}/{totalAttempts} attempts</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Users In Training</CardTitle></CardHeader>
+          <CardContent>
+            <span className="text-3xl font-display font-bold text-info">{uniqueUsersWithProgress.size}</span>
+            <p className="text-xs text-muted-foreground mt-1">{usersCompleted.size} with mandatory done</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user, roles, hasRole } = useAuth();
+  const isAdminOrCO = hasRole("admin") || hasRole("compliance_officer");
 
   const { data: moduleCount } = useQuery({
     queryKey: ["module-count"],
@@ -44,7 +141,6 @@ export default function Dashboard() {
     },
   });
 
-  // Module progress for the user
   const { data: progressList } = useQuery({
     queryKey: ["module-progress-all", user?.id],
     queryFn: async () => {
@@ -58,20 +154,15 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
-  // All mandatory modules to find overdue/incomplete
   const { data: mandatoryModules } = useQuery({
     queryKey: ["mandatory-modules"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("training_modules")
-        .select("id, title")
-        .eq("is_mandatory", true);
+      const { data, error } = await supabase.from("training_modules").select("id, title").eq("is_mandatory", true);
       if (error) throw error;
       return data;
     },
   });
 
-  // Expiring certificates
   const { data: expiringCerts } = useQuery({
     queryKey: ["expiring-certs", user?.id],
     queryFn: async () => {
@@ -96,14 +187,10 @@ export default function Dashboard() {
     { title: "Scenarios Available", value: scenarioCount ?? 0, icon: GitBranch, color: "text-warning" },
   ];
 
-  // Find incomplete mandatory modules
   const completedIds = new Set(progressList?.filter((p) => p.status === "completed").map((p) => p.module_id) || []);
   const overdueModules = mandatoryModules?.filter((m) => !completedIds.has(m.id)) || [];
-
-  // In-progress modules
   const inProgressModules = progressList?.filter((p) => p.status === "in_progress") || [];
 
-  // Overall completion percentage
   const totalMandatory = mandatoryModules?.length || 0;
   const completedMandatory = mandatoryModules?.filter((m) => completedIds.has(m.id)).length || 0;
   const overallPct = totalMandatory > 0 ? Math.round((completedMandatory / totalMandatory) * 100) : 0;
@@ -114,7 +201,7 @@ export default function Dashboard() {
       <div className="gradient-hero rounded-xl p-8 text-primary-foreground">
         <h1 className="text-3xl font-display font-bold mb-2">Welcome back!</h1>
         <p className="text-primary-foreground/80">
-          Your role: <span className="capitalize font-semibold text-primary-foreground">{roleBadge}</span>
+          Your role: <Badge className="ml-1 capitalize bg-primary-foreground/20 text-primary-foreground border-0">{roleBadge}</Badge>
         </p>
         <p className="text-primary-foreground/60 text-sm mt-1">
           DPDP Act 2023 Compliance Training Platform
@@ -126,7 +213,10 @@ export default function Dashboard() {
         <p className="text-xs text-primary-foreground/50 mt-1">{completedMandatory}/{totalMandatory} mandatory modules completed</p>
       </div>
 
-      {/* Stats */}
+      {/* Admin/CO Organization Overview */}
+      {isAdminOrCO && <AdminOrgStats />}
+
+      {/* Personal Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
@@ -143,7 +233,6 @@ export default function Dashboard() {
 
       {/* Alerts & In-Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Overdue Mandatory */}
         <div>
           <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" /> Pending Mandatory Training
@@ -171,7 +260,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Continue In-Progress */}
         <div>
           <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
             <PlayCircle className="h-5 w-5 text-info" /> Continue Training
@@ -265,19 +353,35 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           </a>
-          <a href="/assessments" className="group">
-            <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
-                  <ClipboardCheck className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Take Assessment</h3>
-                  <p className="text-sm text-muted-foreground">Test your knowledge</p>
-                </div>
-              </CardContent>
-            </Card>
-          </a>
+          {isAdminOrCO ? (
+            <a href="/reports" className="group">
+              <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
+                    <TrendingUp className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">View Reports</h3>
+                    <p className="text-sm text-muted-foreground">Organization compliance metrics</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
+          ) : (
+            <a href="/assessments" className="group">
+              <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
+                    <ClipboardCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Take Assessment</h3>
+                    <p className="text-sm text-muted-foreground">Test your knowledge</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
+          )}
         </div>
       </div>
     </div>
