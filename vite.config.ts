@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
-    force: true,
+    force: true, // v3 cache bust
     include: [
       "react",
       "react-dom",
