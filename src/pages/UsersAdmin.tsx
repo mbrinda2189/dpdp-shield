@@ -6,12 +6,15 @@ import { Users, ShieldCheck, UserCog, Briefcase } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { Constants } from "@/integrations/supabase/types";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin", icon: ShieldCheck },
   { value: "compliance_officer", label: "Compliance Officer", icon: UserCog },
   { value: "employee", label: "Employee", icon: Briefcase },
 ] as const;
+
+const DEPARTMENTS = Constants.public.Enums.department;
 
 export default function UsersAdmin() {
   const { toast } = useToast();
@@ -69,6 +72,18 @@ export default function UsersAdmin() {
     const completed = userProg.filter((p) => p.status === "completed").length;
     return { completed, total: userProg.length };
   };
+
+  const changeDept = useMutation({
+    mutationFn: async ({ profileId, dept }: { profileId: string; dept: string }) => {
+      const { error } = await supabase.from("profiles").update({ department: dept as any }).eq("id", profileId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-profiles"] });
+      toast({ title: "Department updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
 
   const roleCounts = {
     admin: allRoles?.filter((r) => r.role === "admin").length || 0,
@@ -130,7 +145,23 @@ export default function UsersAdmin() {
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.full_name || "—"}</TableCell>
-                      <TableCell className="capitalize">{p.department || "—"}</TableCell>
+                      <TableCell>
+                        <Select
+                          value={p.department || ""}
+                          onValueChange={(val) => changeDept.mutate({ profileId: p.id, dept: val })}
+                        >
+                          <SelectTrigger className="w-[130px] h-8 text-xs">
+                            <SelectValue placeholder="Assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DEPARTMENTS.map((d) => (
+                              <SelectItem key={d} value={d} className="text-xs capitalize">
+                                {d}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
                       <TableCell>
                         <Select
                           value={currentRole}

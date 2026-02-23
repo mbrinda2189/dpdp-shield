@@ -7,9 +7,11 @@ import { Progress } from "@/components/ui/progress";
 import { BookOpen, Clock, Target, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import ModuleViewer from "@/components/ModuleViewer";
+import AdminModuleForm from "@/components/AdminModuleForm";
 
 export default function Modules() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const isAdminOrCO = hasRole("admin") || hasRole("compliance_officer");
   const [activeModule, setActiveModule] = useState<string | null>(null);
 
   const { data: modules, isLoading } = useQuery({
@@ -49,6 +51,8 @@ export default function Modules() {
         <h1 className="text-2xl font-display font-bold">Training Modules</h1>
         <p className="text-muted-foreground">DPDP Act 2023 compliance training curriculum</p>
       </div>
+
+      {isAdminOrCO && <AdminModuleForm />}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
