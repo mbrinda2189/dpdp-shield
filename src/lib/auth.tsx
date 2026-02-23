@@ -22,10 +22,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<string[]>([]);
 
   const fetchRoles = async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId);
+    console.log("[Auth] fetchRoles for", userId, "result:", data, "error:", error);
     setRoles(data?.map((r) => r.role) || []);
   };
 
