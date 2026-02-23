@@ -1,12 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, HelpCircle } from "lucide-react";
 import { useState } from "react";
 import AssessmentQuiz from "@/components/AssessmentQuiz";
+import AdminAssessmentForm from "@/components/AdminAssessmentForm";
 
 export default function Assessments() {
+  const { hasRole } = useAuth();
+  const isAdminOrCO = hasRole("admin") || hasRole("compliance_officer");
   const [activeAssessment, setActiveAssessment] = useState<string | null>(null);
 
   const { data: assessments, isLoading } = useQuery({
@@ -31,6 +35,8 @@ export default function Assessments() {
         <h1 className="text-2xl font-display font-bold">Assessments</h1>
         <p className="text-muted-foreground">Test your DPDP compliance knowledge</p>
       </div>
+
+      {isAdminOrCO && <AdminAssessmentForm />}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
