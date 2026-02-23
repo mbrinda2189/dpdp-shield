@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Constants } from "@/integrations/supabase/types";
 
+
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin", icon: ShieldCheck },
   { value: "compliance_officer", label: "Compliance Officer", icon: UserCog },
