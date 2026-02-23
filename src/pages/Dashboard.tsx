@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BookOpen, Award, ClipboardCheck, GitBranch, AlertTriangle, PlayCircle, Users, ShieldCheck, TrendingUp } from "lucide-react";
+import { BookOpen, Award, ClipboardCheck, GitBranch, AlertTriangle, PlayCircle, Users, ShieldCheck, TrendingUp, Plus, Settings } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
@@ -178,6 +178,15 @@ export default function Dashboard(): JSX.Element {
     enabled: !!user,
   });
 
+  const { data: profile } = useQuery({
+    queryKey: ["user-profile", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("department, full_name").eq("user_id", user!.id).single();
+      return data;
+    },
+    enabled: !!user,
+  });
+
   const roleBadge = roles.length > 0 ? roles[0].replace("_", " ") : "employee";
 
   const stats = [
@@ -202,15 +211,22 @@ export default function Dashboard(): JSX.Element {
         <h1 className="text-3xl font-display font-bold mb-2">Welcome back!</h1>
         <p className="text-primary-foreground/80">
           Your role: <Badge className="ml-1 capitalize bg-primary-foreground/20 text-primary-foreground border-0">{roleBadge}</Badge>
+          {!isAdminOrCO && profile?.department && (
+            <Badge className="ml-2 capitalize bg-primary-foreground/20 text-primary-foreground border-0">{profile.department}</Badge>
+          )}
         </p>
         <p className="text-primary-foreground/60 text-sm mt-1">
           DPDP Act 2023 Compliance Training Platform
         </p>
-        <div className="mt-4 flex items-center gap-3">
-          <Progress value={overallPct} className="flex-1 h-3 bg-primary-foreground/20" />
-          <span className="text-sm font-semibold text-primary-foreground">{overallPct}% Complete</span>
-        </div>
-        <p className="text-xs text-primary-foreground/50 mt-1">{completedMandatory}/{totalMandatory} mandatory modules completed</p>
+        {!isAdminOrCO && (
+          <>
+            <div className="mt-4 flex items-center gap-3">
+              <Progress value={overallPct} className="flex-1 h-3 bg-primary-foreground/20" />
+              <span className="text-sm font-semibold text-primary-foreground">{overallPct}% Complete</span>
+            </div>
+            <p className="text-xs text-primary-foreground/50 mt-1">{completedMandatory}/{totalMandatory} mandatory modules completed</p>
+          </>
+        )}
       </div>
 
       {/* Admin/CO Organization Overview */}
@@ -231,156 +247,240 @@ export default function Dashboard(): JSX.Element {
         ))}
       </div>
 
-      {/* Alerts & In-Progress */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Admin/CO: Content Management */}
+      {isAdminOrCO && (
         <div>
           <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-warning" /> Pending Mandatory Training
+            <Settings className="h-5 w-5 text-accent" /> Content Management
           </h2>
-          {overdueModules.length > 0 ? (
-            <div className="space-y-2">
-              {overdueModules.map((m) => (
-                <a key={m.id} href="/modules">
-                  <Card className="border-warning/30 bg-warning/5 hover:bg-warning/10 transition-colors cursor-pointer">
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <BookOpen className="h-4 w-4 text-warning shrink-0" />
-                      <span className="text-sm font-medium">{m.title}</span>
-                      <Badge variant="outline" className="ml-auto text-xs text-warning border-warning/50">Incomplete</Badge>
-                    </CardContent>
-                  </Card>
-                </a>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-success/30 bg-success/5">
-              <CardContent className="p-4 text-sm text-success flex items-center gap-2">
-                <Award className="h-4 w-4" /> All mandatory training completed!
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div>
-          <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
-            <PlayCircle className="h-5 w-5 text-info" /> Continue Training
-          </h2>
-          {inProgressModules.length > 0 ? (
-            <div className="space-y-2">
-              {inProgressModules.map((p) => (
-                <a key={p.id} href="/modules">
-                  <Card className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">{(p.training_modules as any)?.title}</span>
-                        <span className="text-xs text-muted-foreground">{p.progress_percent}%</span>
-                      </div>
-                      <Progress value={p.progress_percent} className="h-1.5" />
-                    </CardContent>
-                  </Card>
-                </a>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                No modules in progress. Start a module to track your progress.
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-
-      {/* Certification Status */}
-      {expiringCerts && expiringCerts.length > 0 && (
-        <div>
-          <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
-            <Award className="h-5 w-5 text-accent" /> Certification Status
-          </h2>
-          <div className="space-y-2">
-            {expiringCerts.map((cert) => {
-              const isValid = new Date(cert.valid_until) > new Date();
-              const daysLeft = Math.ceil((new Date(cert.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-              return (
-                <Card key={cert.id} className="border-border/50">
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Award className={`h-4 w-4 shrink-0 ${isValid ? "text-success" : "text-destructive"}`} />
-                    <span className="text-sm font-medium flex-1">{(cert.training_modules as any)?.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      Expires: {format(new Date(cert.valid_until), "MMM d, yyyy")}
-                    </span>
-                    <Badge className={`text-xs ${
-                      !isValid ? "bg-destructive text-destructive-foreground" :
-                      daysLeft < 30 ? "bg-warning text-warning-foreground" :
-                      "bg-success text-success-foreground"
-                    }`}>
-                      {!isValid ? "Expired" : daysLeft < 30 ? `${daysLeft}d left` : "Valid"}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <a href="/modules" className="group">
+              <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Manage Modules</h3>
+                    <p className="text-sm text-muted-foreground">Add or edit training modules</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
+            <a href="/scenarios" className="group">
+              <Card className="border-border/50 hover:border-warning/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground transition-colors">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Manage Scenarios</h3>
+                    <p className="text-sm text-muted-foreground">Create compliance scenarios</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
+            <a href="/assessments" className="group">
+              <Card className="border-border/50 hover:border-info/50 transition-colors cursor-pointer">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Manage Assessments</h3>
+                    <p className="text-sm text-muted-foreground">Create quizzes and tests</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
           </div>
         </div>
+      )}
+
+      {/* Employee: Alerts & In-Progress */}
+      {!isAdminOrCO && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-warning" /> Pending Mandatory Training
+              </h2>
+              {overdueModules.length > 0 ? (
+                <div className="space-y-2">
+                  {overdueModules.map((m) => (
+                    <a key={m.id} href="/modules">
+                      <Card className="border-warning/30 bg-warning/5 hover:bg-warning/10 transition-colors cursor-pointer">
+                        <CardContent className="p-4 flex items-center gap-3">
+                          <BookOpen className="h-4 w-4 text-warning shrink-0" />
+                          <span className="text-sm font-medium">{m.title}</span>
+                          <Badge variant="outline" className="ml-auto text-xs text-warning border-warning/50">Incomplete</Badge>
+                        </CardContent>
+                      </Card>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <Card className="border-success/30 bg-success/5">
+                  <CardContent className="p-4 text-sm text-success flex items-center gap-2">
+                    <Award className="h-4 w-4" /> All mandatory training completed!
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            <div>
+              <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+                <PlayCircle className="h-5 w-5 text-info" /> Continue Training
+              </h2>
+              {inProgressModules.length > 0 ? (
+                <div className="space-y-2">
+                  {inProgressModules.map((p) => (
+                    <a key={p.id} href="/modules">
+                      <Card className="border-border/50 hover:shadow-sm transition-shadow cursor-pointer">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium">{(p.training_modules as any)?.title}</span>
+                            <span className="text-xs text-muted-foreground">{p.progress_percent}%</span>
+                          </div>
+                          <Progress value={p.progress_percent} className="h-1.5" />
+                        </CardContent>
+                      </Card>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <Card className="border-border/50">
+                  <CardContent className="p-4 text-sm text-muted-foreground">
+                    No modules in progress. Start a module to track your progress.
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+
+          {/* Certification Status */}
+          {expiringCerts && expiringCerts.length > 0 && (
+            <div>
+              <h2 className="text-lg font-display font-semibold mb-3 flex items-center gap-2">
+                <Award className="h-5 w-5 text-accent" /> Certification Status
+              </h2>
+              <div className="space-y-2">
+                {expiringCerts.map((cert) => {
+                  const isValid = new Date(cert.valid_until) > new Date();
+                  const daysLeft = Math.ceil((new Date(cert.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <Card key={cert.id} className="border-border/50">
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <Award className={`h-4 w-4 shrink-0 ${isValid ? "text-success" : "text-destructive"}`} />
+                        <span className="text-sm font-medium flex-1">{(cert.training_modules as any)?.title}</span>
+                        <span className="text-xs text-muted-foreground">
+                          Expires: {format(new Date(cert.valid_until), "MMM d, yyyy")}
+                        </span>
+                        <Badge className={`text-xs ${
+                          !isValid ? "bg-destructive text-destructive-foreground" :
+                          daysLeft < 30 ? "bg-warning text-warning-foreground" :
+                          "bg-success text-success-foreground"
+                        }`}>
+                          {!isValid ? "Expired" : daysLeft < 30 ? `${daysLeft}d left` : "Valid"}
+                        </Badge>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Quick Actions */}
       <div>
         <h2 className="text-xl font-display font-semibold mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a href="/modules" className="group">
-            <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                  <BookOpen className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Start Training</h3>
-                  <p className="text-sm text-muted-foreground">Browse available modules</p>
-                </div>
-              </CardContent>
-            </Card>
-          </a>
-          <a href="/scenarios" className="group">
-            <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground transition-colors">
-                  <GitBranch className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Run Simulation</h3>
-                  <p className="text-sm text-muted-foreground">Practice compliance scenarios</p>
-                </div>
-              </CardContent>
-            </Card>
-          </a>
           {isAdminOrCO ? (
-            <a href="/reports" className="group">
-              <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
-                    <TrendingUp className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">View Reports</h3>
-                    <p className="text-sm text-muted-foreground">Organization compliance metrics</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </a>
+            <>
+              <a href="/users" className="group">
+                <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
+                      <Users className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Manage Users</h3>
+                      <p className="text-sm text-muted-foreground">Assign roles & departments</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+              <a href="/reports" className="group">
+                <Card className="border-border/50 hover:border-info/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
+                      <TrendingUp className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">View Reports</h3>
+                      <p className="text-sm text-muted-foreground">Organization compliance metrics</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+              <a href="/certificates" className="group">
+                <Card className="border-border/50 hover:border-success/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground transition-colors">
+                      <Award className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">View Certificates</h3>
+                      <p className="text-sm text-muted-foreground">All issued certificates</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+            </>
           ) : (
-            <a href="/assessments" className="group">
-              <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
-                    <ClipboardCheck className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">Take Assessment</h3>
-                    <p className="text-sm text-muted-foreground">Test your knowledge</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </a>
+            <>
+              <a href="/modules" className="group">
+                <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
+                      <BookOpen className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Start Training</h3>
+                      <p className="text-sm text-muted-foreground">Browse available modules</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+              <a href="/scenarios" className="group">
+                <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground transition-colors">
+                      <GitBranch className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Run Simulation</h3>
+                      <p className="text-sm text-muted-foreground">Practice compliance scenarios</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+              <a href="/assessments" className="group">
+                <Card className="border-border/50 hover:border-accent/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="p-3 rounded-lg bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground transition-colors">
+                      <ClipboardCheck className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Take Assessment</h3>
+                      <p className="text-sm text-muted-foreground">Test your knowledge</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+            </>
           )}
         </div>
       </div>
