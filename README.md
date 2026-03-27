@@ -2,7 +2,9 @@
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+**URL**: [https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID]
+
+The website can be seen here (https://dpdp-comply.lovable.app/)
 
 ## How can I edit this code?
 
